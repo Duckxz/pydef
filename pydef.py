@@ -28,14 +28,22 @@ class PyDefUtils:
 
     @staticmethod
     def is_method(thing):
-        if inspect.ismethod(thing) or inspect.isfunction(thing) or inspect.ismethoddescriptor:
+        if (inspect.ismethod(thing) or inspect.isfunction(thing) or inspect.ismethoddescriptor(thing)) and PyDefUtils.is_valid_method(thing) and not PyDefUtils.is_field(thing):
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def is_valid_method(thing):
+        invalids = ["dictproxy", "NoneType", "PyCapsule", "tuple", "frozenset", "set", "object"]
+        if not type(thing).__name__ in invalids:
             return True
         else:
             return False
 
     @staticmethod
     def is_function(thing):
-        if inspect.isfunction(thing) or type(thing).__name__ == "function" or type(thing).__name__ == "builtin_function_or_method":
+        if inspect.isfunction(thing) or inspect.ismethoddescriptor(thing) or type(thing).__name__ == "function" or type(thing).__name__ == "builtin_function_or_method":
             return True
         else:
             return False
@@ -43,7 +51,7 @@ class PyDefUtils:
     @staticmethod
     def is_data(thing):
         datas = ['int', 'float', 'str', 'long', 'complex', 'bool', 'Nonetype']
-        if type(thing).__name__ in datas:
+        if type(thing).__name__ in datas or inspect.isdatadescriptor(thing):
             return True
         else:
             return False
@@ -56,19 +64,21 @@ class PyDefUtils:
             return False
 
 class PyFieldInfo:
-    def __init__(self, name, val, t):
+    def __init__(self, name, obj):
         self.name = name
-        self.val = val
-        self.type = t
+        self.val = str(obj)
+        self.type = type(obj)
 
-class PyMethodInfo:
+class PyFunctionInfo:
     def __init__(self, method):
+        print(method)
+        print(type(method))
         self.name = method.__name__
         self.args = []
         self.defaults = []
         self.extract(method)
 
-    def extract(method):
+    def extract(self, method):
         try:
             args = inspect.getargspec()
             self.args = args[0]
@@ -78,44 +88,53 @@ class PyMethodInfo:
         
 class PyClassInfo:
     def __init__(self, cls):
-        self.obj = cls
         self.name = cls.__name__
         self.members = dir(cls)
         self.fields = []
         self.methods = []
         self.bases = []
-        self.extract()
+        self.extract(cls)
 
-    def extract(self):
+    def extract(self, cls):
         # base class(es)
-        for base in self.obj.__bases__:
+        for base in cls.__bases__:
             self.bases.append(PyClassInfo(base))
 
         # fields
         for field in self.members:
-            field_obj = getattr(self.obj, field)
+            try:
+                field_obj = getattr(cls, field)
+            except:
+                return
             if PyDefUtils.is_field(field_obj):
-                self.fields.append(PyFieldInfo(field, str(field_obj), type(field_obj)))
+                self.fields.append(PyFieldInfo(field, field_obj))
 
         # methods
         for method in self.members:
-            method_obj = getattr(self.obj, method)
+            method_obj = getattr(cls, method)
             if PyDefUtils.is_method(method_obj):
-                self.methods.append(PyMethodInfo(method_obj))
+                self.methods.append(PyFunctionInfo(method_obj))
 
+class PyModuleInfo:
+    def __init__(self, module):
+        self.name = module.__name__
+        self.members = []
+        self.extract(module)
 
-class PyDefInfo:
-    def __init__(self, obj):
-        self.obj = obj
-        self.type = type(obj)
-        self.class_info = None
-        self.extract()          
-
-    def extract(self):
-        if PyDefUtils.is_class(self.obj):
-            self.class_info = PyClassInfo(self.obj)
-            self.class_info.extract()
-
+    def extract(self, module):
+        if not inspect.ismodule(module):
+            raise ValueError("Given object is not a module")
+        for member in dir(module):
+            member_obj = getattr(module, member)
+            if PyDefUtils.is_data(member_obj):
+                self.members.append(PyFieldInfo(member, member_obj))
+            if PyDefUtils.is_class(member_obj):
+                self.members.append(PyClassInfo(member_obj))
+            if PyDefUtils.is_function(member_obj):
+                self.members.append(PyFunctionInfo(member_obj))
+            #if PyDefUtils.is_module(member_obj):
+                #self.members.append(PyModuleInfo(member_obj))
+            
 
 class PyDefDumper:
     mods_to_dump = None
@@ -148,7 +167,7 @@ class PyDefDumper:
             return True
 
     def is_method(self, thing):
-        if inspect.ismethod(thing) or inspect.isfunction(thing) or inspect.ismethoddescriptor:
+        if inspect.ismethod(thing) or inspect.isfunction(thing) or inspect.ismethoddescriptor(thing):
             return True
         else:
             return False
