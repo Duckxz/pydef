@@ -43,7 +43,7 @@ class PyDefUtils:
 
     @staticmethod
     def is_function(thing):
-        if inspect.isfunction(thing) or inspect.ismethoddescriptor(thing) or type(thing).__name__ == "function" or type(thing).__name__ == "builtin_function_or_method":
+        if inspect.isfunction(thing) or inspect.ismethoddescriptor(thing) or type(thing).__name__ == "function" or type(thing).__name__ == "builtin_function_or_method" or type(thing).__name__ == "instancemethod":
             return True
         else:
             return False
@@ -58,7 +58,7 @@ class PyDefUtils:
 
     @staticmethod
     def is_field(field):
-        if inspect.isdatadescriptor(field) or PyDefUtils.is_data(field):
+        if inspect.isdatadescriptor(field) or PyDefUtils.is_data(field) and not inspect.isgetsetdescriptor(field):
             return True
         else:
             return False
@@ -66,13 +66,11 @@ class PyDefUtils:
 class PyFieldInfo:
     def __init__(self, name, obj):
         self.name = name
-        self.val = str(obj)
+        self.val = obj
         self.type = type(obj)
 
 class PyFunctionInfo:
     def __init__(self, method):
-        print(method)
-        print(type(method))
         self.name = method.__name__
         self.args = []
         self.defaults = []
@@ -80,7 +78,7 @@ class PyFunctionInfo:
 
     def extract(self, method):
         try:
-            args = inspect.getargspec()
+            args = inspect.getargspec(method)
             self.args = args[0]
             self.defaults = args.defaults
         except:
@@ -135,6 +133,91 @@ class PyModuleInfo:
             #if PyDefUtils.is_module(member_obj):
                 #self.members.append(PyModuleInfo(member_obj))
             
+
+class PyModuleDumper:
+    def __init__(self, module):
+        self.module = PyModuleInfo(module)
+
+    def dump_field(self, field, indent):
+        field_def = '\t' * indent
+        if PyDefUtils.is_data(field.val):
+            field_def += field.name + " = " + str(field.val) + " # of type '" + field.type.__name__ + "'"
+        else:
+            field_def += field.name + " = " + field.type.__name__
+        field_def += '\n'
+        return field_def
+
+    def dump_function(self, function, indent):
+        function_def = ('\t' * indent) + "def " + function.name + '(' + ", ".join(function.args) + "):\n" + ('\t' * (indent + 1)) + "pass"
+        function_def += "\n\n"
+        return function_def
+
+    def dump_class(self, cls, indent):
+        class_def = ('\t' * indent) + "class " + cls.name
+        if cls.bases:
+            class_def += "(" + ", ".join(map(lambda base: base.name, cls.bases)) + "):"
+        else:
+            class_def += ":"
+        class_def += '\n'
+
+        for field in cls.fields:
+            class_def += self.dump_field(field, indent + 1)
+
+        for method in cls.methods:
+            if PyDefUtils.is_valid_name(method.name):
+                class_def += self.dump_function(method, indent + 1)
+        return class_def
+
+    def dump_to_file(self, fd):
+        fields = []
+        functions = []
+        classes = []
+        seen = []
+        for member in self.module.members:
+            if isinstance(member, PyFieldInfo):
+                fields.append(member)
+            if isinstance(member, PyFunctionInfo):
+                functions.append(member)
+            if isinstance(member, PyClassInfo):
+                classes.append(member)
+
+            for field in fields:
+                if not "field" + field.name in seen:
+                    fd.write(self.dump_field(field, 0))
+                    seen.append("field" + field.name)
+
+            for function in functions:
+                if not "func" + function.name in seen:
+                    fd.write(self.dump_function(function, 0))
+                    seen.append("func" + function.name)
+
+            for cls in classes:
+                if not "class" + cls.name in seen:
+                    fd.write(self.dump_class(cls, 0))
+                    seen.append("class" + cls.name)
+            fd.flush()
+
+    def dump_print(self):
+        fields = []
+        functions = []
+        classes = []
+        for member in self.module.members:
+            if isinstance(member, PyFieldInfo):
+                fields.append(member)
+            if isinstance(member, PyFunctionInfo):
+                functions.append(member)
+            if isinstance(member, PyClassInfo):
+                classes.append(member)
+
+            for field in fields:
+                print(self.dump_field(field, 0))
+
+            for function in functions:
+                print(self.dump_function(function, 0))
+
+            for cls in classes:
+                print(self.dump_class(cls, 0))
+                
 
 class PyDefDumper:
     mods_to_dump = None
